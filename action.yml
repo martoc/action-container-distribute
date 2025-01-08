@@ -1,0 +1,78 @@
+---
+name: "Distribute a container image"
+description: |
+  This action copies a container image to multiple registries.
+author: martoc
+inputs:
+  source_registry:
+    description: "Source registry"
+    required: true
+  source_workload_identity_provider:
+    description: "Workload Identity Provider"
+    required: false
+  source_service_account:
+    description: "Service Account"
+    required: false
+  source_region:
+    description: |
+      Region to push the container to.
+      Valid values: Google Cloud or AWS regions.
+      Region to push the container to.
+      Valid values: google cloud or aws regions
+    required: false
+    default: ""
+  source_gcp_project_id:
+    description: "Google Cloud Project ID"
+    required: false
+    default: ""
+  target_registry:
+    description: "Target registry"
+    required: true
+  target_workload_identity_provider:
+    description: "Workload Identity Provider"
+    required: false
+  target_service_account:
+    description: "Service Account"
+    required: false
+  target_region:
+    description: "Region to push the container to valid values: google cloud or aws regions"
+    required: false
+    default: ""
+  target_gcp_project_id:
+    description: "Google Cloud Project ID"
+    required: false
+    default: ""
+  container_image:
+    description: "Container image in the format: [namespace]/[name]:[tag]"
+    required: true
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        version: 499.0.0
+      if: ${{ inputs.source_registry == 'gcp' || inputs.target_registry == 'gcp' }}
+    - uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.source_workload_identity_provider }}
+        service_account: ${{ inputs.source_service_account }}
+      if: ${{ inputs.source_registry == 'gcp' }}
+    - name: Pull image from source
+      shell: bash
+      run: |
+        gcloud auth configure-docker --quiet ${{ inputs.source_region }}-docker.pkg.dev
+        docker pull ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
+      if: ${{ inputs.source_registry == 'gcp' }}
+    - uses: google-github-actions/auth@v2
+      with:
+        workload_identity_provider: ${{ inputs.target_workload_identity_provider }}
+        service_account: ${{ inputs.target_service_account }}
+      if: ${{ inputs.target_registry == 'gcp' }}
+    - name: Push image to target
+      shell: bash
+      run: |
+        gcloud auth configure-docker --quiet ${{ inputs.target_region }}-docker.pkg.dev
+        docker tag ${{ inputs.container_image }} --tag ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
+        docker push ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
+      if: ${{ inputs.target_registry == 'gcp' }}
