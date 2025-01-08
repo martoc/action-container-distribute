@@ -4,6 +4,10 @@ description: |
   This action copies a container image to multiple registries.
 author: martoc
 inputs:
+  type:
+    description: "Type of the image to distribute valid values: docker and helm"
+    required: true
+    default: "docker"
   source_registry:
     description: "Source registry"
     required: true
@@ -62,7 +66,7 @@ runs:
       shell: bash
       run: |
         gcloud auth configure-docker --quiet ${{ inputs.source_region }}-docker.pkg.dev
-        docker pull ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
+        ${{ inputs.type }} pull ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
       if: ${{ inputs.source_registry == 'gcp' }}
     - uses: google-github-actions/auth@v2
       with:
@@ -73,6 +77,6 @@ runs:
       shell: bash
       run: |
         gcloud auth configure-docker --quiet ${{ inputs.target_region }}-docker.pkg.dev
-        docker tag ${{ inputs.container_image }} --tag ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
-        docker push ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
+        ${{ inputs.type }} tag ${{ inputs.container_image }} --tag ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
+        ${{ inputs.type }} push ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
       if: ${{ inputs.target_registry == 'gcp' }}
