@@ -62,7 +62,7 @@ runs:
       shell: bash
       run: |
         gcloud auth configure-docker --quiet ${{ inputs.source_region }}-docker.pkg.dev
-        docker pull ${PROTOCOL}${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
+        docker pull ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
       if: ${{ inputs.source_registry == 'gcp' }}
     - uses: google-github-actions/auth@v2
       with:
@@ -73,6 +73,7 @@ runs:
       shell: bash
       run: |
         gcloud auth configure-docker --quiet ${{ inputs.target_region }}-docker.pkg.dev
-        docker tag ${{ inputs.container_image }} ${PROTOCOL}${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
-        docker push ${PROTOCOL}${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
+        docker tag ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }} \
+                   ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
+        docker push ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
       if: ${{ inputs.target_registry == 'gcp' }}
