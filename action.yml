@@ -82,6 +82,11 @@ runs:
       shell: bash
       run: |
         SOURCE_AWS_ACCOUNT_ID=$(echo "${{ inputs.source_aws_role_arn }}" | cut -d':' -f5)
+        if [[ -z "${SOURCE_AWS_ACCOUNT_ID}" ]]; then
+          echo "Error: Failed to extract AWS account ID from source_aws_role_arn ('${{ inputs.source_aws_role_arn }}')." >&2
+          echo "Please ensure it is a valid IAM role ARN, e.g., arn:aws:iam::<account-id>:role/<role-name>." >&2
+          exit 1
+        fi
         aws ecr get-login-password --region ${{ inputs.source_region }} | \
           docker login --username AWS --password-stdin "${SOURCE_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com"
         docker pull "${SOURCE_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com/${{ inputs.container_image }}"
@@ -108,9 +113,13 @@ runs:
     - name: Push image to AWS ECR target
       shell: bash
       run: |
-        # Extract account IDs from role ARNs
+        # Extract and validate target account ID from role ARN
         TARGET_AWS_ACCOUNT_ID=$(echo "${{ inputs.target_aws_role_arn }}" | cut -d':' -f5)
-        SOURCE_AWS_ACCOUNT_ID=$(echo "${{ inputs.source_aws_role_arn }}" | cut -d':' -f5)
+        if [[ -z "${TARGET_AWS_ACCOUNT_ID}" ]]; then
+          echo "Error: Failed to extract AWS account ID from target_aws_role_arn ('${{ inputs.target_aws_role_arn }}')." >&2
+          echo "Please ensure it is a valid IAM role ARN, e.g., arn:aws:iam::<account-id>:role/<role-name>." >&2
+          exit 1
+        fi
 
         # Login to ECR
         aws ecr get-login-password --region ${{ inputs.target_region }} | \
@@ -125,6 +134,7 @@ runs:
         if [[ "${{ inputs.source_registry }}" == "gcp" ]]; then
           SOURCE_IMAGE="${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}"
         elif [[ "${{ inputs.source_registry }}" == "aws" ]]; then
+          SOURCE_AWS_ACCOUNT_ID=$(echo "${{ inputs.source_aws_role_arn }}" | cut -d':' -f5)
           SOURCE_IMAGE="${SOURCE_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com/${{ inputs.container_image }}"
         fi
 
