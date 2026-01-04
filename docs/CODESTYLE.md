@@ -19,12 +19,56 @@ yamllint action.yml .github/
 
 ## Shell Scripts
 
+### Standalone Scripts
+
+Shell scripts in the `scripts/` directory should follow these guidelines:
+
+- Use `#!/usr/bin/env bash` shebang
+- Enable strict mode: `set -euo pipefail`
+- Use `readonly` for constants
+- Include usage documentation in comments at the top of the script
+- Use meaningful function and variable names
+- Log messages should include the script name for traceability
+- Exit with appropriate status codes (0 for success, non-zero for errors)
+
+Example structure:
+
+```bash
+#!/usr/bin/env bash
+#
+# Script description here.
+#
+# Usage: script-name.sh <arg1> <arg2>
+#
+
+set -euo pipefail
+
+readonly SCRIPT_NAME="$(basename "${0}")"
+
+log_info() {
+    echo "[INFO] ${SCRIPT_NAME}: ${1}"
+}
+
+log_error() {
+    echo "[ERROR] ${SCRIPT_NAME}: ${1}" >&2
+}
+
+main() {
+    # Implementation
+}
+
+main "${@}"
+```
+
+### Embedded Scripts in action.yml
+
 The action contains embedded shell scripts in `action.yml`. Follow these guidelines:
 
 - Use double quotes for variable expansion
 - Check required variables with explicit error messages
 - Exit with non-zero status on errors
 - Use meaningful variable names
+- Add comments for complex logic
 
 ## Commit Messages
 
