@@ -25,6 +25,14 @@ inputs:
     description: "Google Cloud Project ID"
     required: false
     default: ""
+  source_aws_account_id:
+    description: "AWS Account ID"
+    required: false
+    default: ""
+  source_aws_role_arn:
+    description: "AWS IAM Role ARN for OIDC authentication"
+    required: false
+    default: ""
   target_registry:
     description: "Target registry"
     required: true
@@ -40,6 +48,14 @@ inputs:
     default: ""
   target_gcp_project_id:
     description: "Google Cloud Project ID"
+    required: false
+    default: ""
+  target_aws_account_id:
+    description: "AWS Account ID"
+    required: false
+    default: ""
+  target_aws_role_arn:
+    description: "AWS IAM Role ARN for OIDC authentication"
     required: false
     default: ""
   container_image:
@@ -64,16 +80,59 @@ runs:
         gcloud auth configure-docker --quiet ${{ inputs.source_region }}-docker.pkg.dev
         docker pull ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
       if: ${{ inputs.source_registry == 'gcp' }}
+    - name: Configure AWS credentials for source
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.source_aws_role_arn }}
+        aws-region: ${{ inputs.source_region }}
+      if: ${{ inputs.source_registry == 'aws' }}
+    - name: Pull image from AWS ECR source
+      shell: bash
+      run: |
+        aws ecr get-login-password --region ${{ inputs.source_region }} | \
+          docker login --username AWS --password-stdin ${{ inputs.source_aws_account_id }}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com
+        docker pull ${{ inputs.source_aws_account_id }}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com/${{ inputs.container_image }}
+      if: ${{ inputs.source_registry == 'aws' }}
     - uses: google-github-actions/auth@v2
       with:
         workload_identity_provider: ${{ inputs.target_workload_identity_provider }}
         service_account: ${{ inputs.target_service_account }}
       if: ${{ inputs.target_registry == 'gcp' }}
-    - name: Push image to target
+    - name: Push image to GCP target
       shell: bash
       run: |
         gcloud auth configure-docker --quiet ${{ inputs.target_region }}-docker.pkg.dev
         docker tag ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }} \
                    ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
         docker push ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
-      if: ${{ inputs.target_registry == 'gcp' }}
+      if: ${{ inputs.target_registry == 'gcp' && inputs.source_registry == 'gcp' }}
+    - name: Configure AWS credentials for target
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.target_aws_role_arn }}
+        aws-region: ${{ inputs.target_region }}
+      if: ${{ inputs.target_registry == 'aws' }}
+    - name: Push image to AWS ECR target
+      shell: bash
+      run: |
+        # Login to ECR
+        aws ecr get-login-password --region ${{ inputs.target_region }} | \
+          docker login --username AWS --password-stdin ${{ inputs.target_aws_account_id }}.dkr.ecr.${{ inputs.target_region }}.amazonaws.com
+
+        # Ensure repository exists
+        REPO_NAME="${{ inputs.container_image }}"
+        REPO_NAME="${REPO_NAME%%:*}"
+        ${{ github.action_path }}/scripts/ecr-ensure-repository.sh "${REPO_NAME}" "${{ inputs.target_region }}"
+
+        # Determine source image based on source registry
+        if [[ "${{ inputs.source_registry }}" == "gcp" ]]; then
+          SOURCE_IMAGE="${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}"
+        elif [[ "${{ inputs.source_registry }}" == "aws" ]]; then
+          SOURCE_IMAGE="${{ inputs.source_aws_account_id }}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com/${{ inputs.container_image }}"
+        fi
+
+        # Tag and push
+        TARGET_IMAGE="${{ inputs.target_aws_account_id }}.dkr.ecr.${{ inputs.target_region }}.amazonaws.com/${{ inputs.container_image }}"
+        docker tag "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
+        docker push "${TARGET_IMAGE}"
+      if: ${{ inputs.target_registry == 'aws' }}
