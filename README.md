@@ -48,7 +48,6 @@ A GitHub Action that copies container images between registries. Supports GCP Ar
     target_registry: aws
     target_aws_role_arn: ${{ secrets.AWS_ROLE_ARN }}
     target_region: eu-west-1
-    target_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
     container_image: namespace/image:tag
 ```
 
@@ -66,15 +65,13 @@ A GitHub Action that copies container images between registries. Supports GCP Ar
 | `source_service_account` | GCP Service Account | No |
 | `source_region` | Source region | No |
 | `source_gcp_project_id` | Source GCP Project ID | No |
-| `source_aws_account_id` | Source AWS Account ID | No |
-| `source_aws_role_arn` | Source AWS IAM Role ARN for OIDC | No |
+| `source_aws_role_arn` | Source AWS IAM Role ARN for OIDC (account ID extracted automatically) | No |
 | `target_registry` | Target registry (`gcp` or `aws`) | Yes |
 | `target_workload_identity_provider` | GCP Workload Identity Provider | No |
 | `target_service_account` | GCP Service Account | No |
 | `target_region` | Target region | No |
 | `target_gcp_project_id` | Target GCP Project ID | No |
-| `target_aws_account_id` | Target AWS Account ID | No |
-| `target_aws_role_arn` | Target AWS IAM Role ARN for OIDC | No |
+| `target_aws_role_arn` | Target AWS IAM Role ARN for OIDC (account ID extracted automatically) | No |
 | `container_image` | Container image in format `[namespace]/[name]:[tag]` | Yes |
 
 ## Licence
