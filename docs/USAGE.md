@@ -13,15 +13,13 @@ This GitHub Action copies a container image to multiple registries. Supports GCP
 | `source_service_account`            | GCP Service Account                                                           | false    |         |
 | `source_region`                     | Region to pull the container from. Valid values: Google Cloud or AWS regions  | false    | ""      |
 | `source_gcp_project_id`             | Google Cloud Project ID                                                       | false    | ""      |
-| `source_aws_account_id`             | AWS Account ID                                                                | false    | ""      |
-| `source_aws_role_arn`               | AWS IAM Role ARN for OIDC authentication                                      | false    | ""      |
+| `source_aws_role_arn`               | AWS IAM Role ARN for OIDC authentication (account ID extracted automatically) | false    | ""      |
 | `target_registry`                   | Target registry (`gcp` or `aws`)                                              | true     |         |
 | `target_workload_identity_provider` | GCP Workload Identity Provider                                                | false    |         |
 | `target_service_account`            | GCP Service Account                                                           | false    |         |
 | `target_region`                     | Region to push the container to. Valid values: Google Cloud or AWS regions    | false    | ""      |
 | `target_gcp_project_id`             | Google Cloud Project ID                                                       | false    | ""      |
-| `target_aws_account_id`             | AWS Account ID                                                                | false    | ""      |
-| `target_aws_role_arn`               | AWS IAM Role ARN for OIDC authentication                                      | false    | ""      |
+| `target_aws_role_arn`               | AWS IAM Role ARN for OIDC authentication (account ID extracted automatically) | false    | ""      |
 | `container_image`                   | Container image in the format: `[namespace]/[name]:[tag]`                     | true     |         |
 
 ## Usage Examples
@@ -91,7 +89,6 @@ jobs:
                   target_registry: "aws"
                   target_aws_role_arn: "arn:aws:iam::123456789012:role/github-actions-role"
                   target_region: "eu-west-1"
-                  target_aws_account_id: "123456789012"
                   container_image: "namespace/image:tag"
 ```
 
@@ -120,11 +117,9 @@ jobs:
                   source_registry: "aws"
                   source_aws_role_arn: "arn:aws:iam::123456789012:role/github-actions-role"
                   source_region: "us-east-1"
-                  source_aws_account_id: "123456789012"
                   target_registry: "aws"
                   target_aws_role_arn: "arn:aws:iam::987654321098:role/github-actions-role"
                   target_region: "eu-west-1"
-                  target_aws_account_id: "987654321098"
                   container_image: "my-app:v1.0.0"
 ```
 
