@@ -128,7 +128,6 @@ runs:
         # Ensure repository exists
         REPO_NAME="${{ inputs.container_image }}"
         REPO_NAME="${REPO_NAME%%:*}"
-        ${{ github.action_path }}/scripts/ecr-ensure-repository.sh "${REPO_NAME}" "${{ inputs.target_region }}"
 
         # Determine source image based on source registry
         if [[ "${{ inputs.source_registry }}" == "gcp" ]]; then
