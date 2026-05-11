@@ -41,7 +41,7 @@ jobs:
             contents: read
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Distribute container image
               uses: martoc/action-container-distribute@v1
@@ -76,7 +76,7 @@ jobs:
             contents: read
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Distribute container image
               uses: martoc/action-container-distribute@v1
@@ -109,7 +109,7 @@ jobs:
             contents: read
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Distribute container image
               uses: martoc/action-container-distribute@v1
