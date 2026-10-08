@@ -1,0 +1,64 @@
+---
+# Exercises the action's input validation with no cloud credentials: every case below
+# fails in the "Validate inputs" step, before any login is attempted. Each call runs with
+# continue-on-error and the following step asserts the outcome, so a validation that
+# wrongly lets bad input through fails this workflow.
+name: Validation
+
+on:  # yamllint disable-line rule:truthy
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  rejects-invalid-input:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - name: Unknown target registry
+        id: unknown_registry
+        continue-on-error: true
+        uses: ./
+        with:
+          source_registry: aws
+          target_registry: azr
+          container_image: namespace/image:tag
+      - name: Azure target without a registry name
+        id: azure_target_incomplete
+        continue-on-error: true
+        uses: ./
+        with:
+          source_registry: aws
+          target_registry: azure
+          target_azure_client_id: 00000000-0000-0000-0000-000000000000
+          target_azure_tenant_id: 00000000-0000-0000-0000-000000000000
+          target_azure_subscription_id: 00000000-0000-0000-0000-000000000000
+          container_image: namespace/image:tag
+      - name: Azure source with no Azure inputs
+        id: azure_source_missing
+        continue-on-error: true
+        uses: ./
+        with:
+          source_registry: azure
+          target_registry: gcp
+          container_image: namespace/image:tag
+      - name: Assert every case was rejected
+        env:
+          UNKNOWN_REGISTRY: ${{ steps.unknown_registry.outcome }}
+          AZURE_TARGET_INCOMPLETE: ${{ steps.azure_target_incomplete.outcome }}
+          AZURE_SOURCE_MISSING: ${{ steps.azure_source_missing.outcome }}
+        run: |
+          set -euo pipefail
+          failed=0
+          for case in UNKNOWN_REGISTRY AZURE_TARGET_INCOMPLETE AZURE_SOURCE_MISSING; do
+            outcome="${!case}"
+            echo "${case}: ${outcome}"
+            if [[ "${outcome}" != "failure" ]]; then
+              echo "Error: ${case} should have been rejected by input validation." >&2
+              failed=1
+            fi
+          done
+          exit "${failed}"
