@@ -1,53 +1,86 @@
 ---
 name: "Distribute a container image"
 description: |
-  This action copies a container image to multiple registries.
+  This action copies a container image between registries: GCP Artifact Registry,
+  AWS ECR and Azure Container Registry, in any combination of source and target.
 author: martoc
 inputs:
   source_registry:
-    description: "Source registry"
+    description: "Source registry. Valid values: gcp, aws, azure"
     required: true
   source_workload_identity_provider:
-    description: "Workload Identity Provider"
+    description: "GCP Workload Identity Provider (gcp source)"
     required: false
   source_service_account:
-    description: "Service Account"
+    description: "GCP Service Account (gcp source)"
     required: false
   source_region:
     description: |
-      Region to push the container to.
+      Region to pull the container from (gcp and aws sources).
       Valid values: Google Cloud or AWS regions.
-      Region to push the container to.
-      Valid values: google cloud or aws regions
     required: false
     default: ""
   source_gcp_project_id:
-    description: "Google Cloud Project ID"
+    description: "Google Cloud Project ID (gcp source)"
     required: false
     default: ""
   source_aws_role_arn:
-    description: "AWS IAM Role ARN for OIDC authentication"
+    description: "AWS IAM Role ARN for OIDC authentication (aws source)"
+    required: false
+    default: ""
+  source_azure_client_id:
+    description: "Client ID of the Microsoft Entra application to log in as with OIDC (azure source)"
+    required: false
+    default: ""
+  source_azure_tenant_id:
+    description: "Microsoft Entra tenant ID (azure source)"
+    required: false
+    default: ""
+  source_azure_subscription_id:
+    description: "Azure subscription ID containing the registry (azure source)"
+    required: false
+    default: ""
+  source_azure_registry_name:
+    description: "Azure Container Registry name, without the .azurecr.io suffix (azure source)"
     required: false
     default: ""
   target_registry:
-    description: "Target registry"
+    description: "Target registry. Valid values: gcp, aws, azure"
     required: true
   target_workload_identity_provider:
-    description: "Workload Identity Provider"
+    description: "GCP Workload Identity Provider (gcp target)"
     required: false
   target_service_account:
-    description: "Service Account"
+    description: "GCP Service Account (gcp target)"
     required: false
   target_region:
-    description: "Region to push the container to valid values: google cloud or aws regions"
+    description: |
+      Region to push the container to (gcp and aws targets).
+      Valid values: Google Cloud or AWS regions.
     required: false
     default: ""
   target_gcp_project_id:
-    description: "Google Cloud Project ID"
+    description: "Google Cloud Project ID (gcp target)"
     required: false
     default: ""
   target_aws_role_arn:
-    description: "AWS IAM Role ARN for OIDC authentication"
+    description: "AWS IAM Role ARN for OIDC authentication (aws target)"
+    required: false
+    default: ""
+  target_azure_client_id:
+    description: "Client ID of the Microsoft Entra application to log in as with OIDC (azure target)"
+    required: false
+    default: ""
+  target_azure_tenant_id:
+    description: "Microsoft Entra tenant ID (azure target)"
+    required: false
+    default: ""
+  target_azure_subscription_id:
+    description: "Azure subscription ID containing the registry (azure target)"
+    required: false
+    default: ""
+  target_azure_registry_name:
+    description: "Azure Container Registry name, without the .azurecr.io suffix (azure target)"
     required: false
     default: ""
   container_image:
@@ -56,6 +89,55 @@ inputs:
 runs:
   using: "composite"
   steps:
+    # Fail before any login or pull. Every later step is gated on a registry value, so a
+    # typo such as "azr" would otherwise skip all of them and report success having copied
+    # nothing.
+    - name: Validate inputs
+      shell: bash
+      env:
+        SOURCE_REGISTRY: ${{ inputs.source_registry }}
+        TARGET_REGISTRY: ${{ inputs.target_registry }}
+        SOURCE_AZURE_CLIENT_ID: ${{ inputs.source_azure_client_id }}
+        SOURCE_AZURE_TENANT_ID: ${{ inputs.source_azure_tenant_id }}
+        SOURCE_AZURE_SUBSCRIPTION_ID: ${{ inputs.source_azure_subscription_id }}
+        SOURCE_AZURE_REGISTRY_NAME: ${{ inputs.source_azure_registry_name }}
+        TARGET_AZURE_CLIENT_ID: ${{ inputs.target_azure_client_id }}
+        TARGET_AZURE_TENANT_ID: ${{ inputs.target_azure_tenant_id }}
+        TARGET_AZURE_SUBSCRIPTION_ID: ${{ inputs.target_azure_subscription_id }}
+        TARGET_AZURE_REGISTRY_NAME: ${{ inputs.target_azure_registry_name }}
+      run: |
+        set -euo pipefail
+        errors=0
+        for registry in "source=${SOURCE_REGISTRY}" "target=${TARGET_REGISTRY}"; do
+          side="${registry%%=*}"
+          value="${registry#*=}"
+          if [[ "${value}" != "gcp" && "${value}" != "aws" && "${value}" != "azure" ]]; then
+            echo "Error: ${side}_registry must be gcp, aws or azure, got '${value}'." >&2
+            errors=1
+          fi
+        done
+        if [[ "${SOURCE_REGISTRY}" == "azure" ]]; then
+          if [[ -z "${SOURCE_AZURE_CLIENT_ID}" || -z "${SOURCE_AZURE_TENANT_ID}" || \
+                -z "${SOURCE_AZURE_SUBSCRIPTION_ID}" || -z "${SOURCE_AZURE_REGISTRY_NAME}" ]]; then
+            echo "Error: an azure source needs source_azure_client_id, source_azure_tenant_id," \
+              "source_azure_subscription_id and source_azure_registry_name." >&2
+            errors=1
+          fi
+        fi
+        if [[ "${TARGET_REGISTRY}" == "azure" ]]; then
+          if [[ -z "${TARGET_AZURE_CLIENT_ID}" || -z "${TARGET_AZURE_TENANT_ID}" || \
+                -z "${TARGET_AZURE_SUBSCRIPTION_ID}" || -z "${TARGET_AZURE_REGISTRY_NAME}" ]]; then
+            echo "Error: an azure target needs target_azure_client_id, target_azure_tenant_id," \
+              "target_azure_subscription_id and target_azure_registry_name." >&2
+            errors=1
+          fi
+        fi
+        exit "${errors}"
+
+    # Every source step exports SOURCE_IMAGE, the fully qualified reference it pulled, and
+    # every target step retags from it without knowing where it came from. That is what
+    # makes each source/target combination work, rather than one push step per pair.
+
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
       with:
@@ -66,12 +148,20 @@ runs:
         workload_identity_provider: ${{ inputs.source_workload_identity_provider }}
         service_account: ${{ inputs.source_service_account }}
       if: ${{ inputs.source_registry == 'gcp' }}
-    - name: Pull image from source
+    - name: Pull image from GCP source
       shell: bash
+      env:
+        REGION: ${{ inputs.source_region }}
+        PROJECT_ID: ${{ inputs.source_gcp_project_id }}
+        CONTAINER_IMAGE: ${{ inputs.container_image }}
       run: |
-        gcloud auth configure-docker --quiet ${{ inputs.source_region }}-docker.pkg.dev
-        docker pull ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}
+        set -euo pipefail
+        gcloud auth configure-docker --quiet "${REGION}-docker.pkg.dev"
+        SOURCE_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${CONTAINER_IMAGE}"
+        docker pull "${SOURCE_IMAGE}"
+        echo "SOURCE_IMAGE=${SOURCE_IMAGE}" >> "${GITHUB_ENV}"
       if: ${{ inputs.source_registry == 'gcp' }}
+
     - name: Configure AWS credentials for source
       uses: aws-actions/configure-aws-credentials@v6
       with:
@@ -80,17 +170,49 @@ runs:
       if: ${{ inputs.source_registry == 'aws' }}
     - name: Pull image from AWS ECR source
       shell: bash
+      env:
+        REGION: ${{ inputs.source_region }}
+        ROLE_ARN: ${{ inputs.source_aws_role_arn }}
+        CONTAINER_IMAGE: ${{ inputs.container_image }}
       run: |
-        SOURCE_AWS_ACCOUNT_ID=$(echo "${{ inputs.source_aws_role_arn }}" | cut -d':' -f5)
-        if [[ -z "${SOURCE_AWS_ACCOUNT_ID}" ]]; then
-          echo "Error: Failed to extract AWS account ID from source_aws_role_arn ('${{ inputs.source_aws_role_arn }}')." >&2
+        set -euo pipefail
+        ACCOUNT_ID=$(echo "${ROLE_ARN}" | cut -d':' -f5)
+        if [[ -z "${ACCOUNT_ID}" ]]; then
+          echo "Error: Failed to extract AWS account ID from source_aws_role_arn ('${ROLE_ARN}')." >&2
           echo "Please ensure it is a valid IAM role ARN, e.g., arn:aws:iam::<account-id>:role/<role-name>." >&2
           exit 1
         fi
-        aws ecr get-login-password --region ${{ inputs.source_region }} | \
-          docker login --username AWS --password-stdin "${SOURCE_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com"
-        docker pull "${SOURCE_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com/${{ inputs.container_image }}"
+        REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+        aws ecr get-login-password --region "${REGION}" | \
+          docker login --username AWS --password-stdin "${REGISTRY}"
+        SOURCE_IMAGE="${REGISTRY}/${CONTAINER_IMAGE}"
+        docker pull "${SOURCE_IMAGE}"
+        echo "SOURCE_IMAGE=${SOURCE_IMAGE}" >> "${GITHUB_ENV}"
       if: ${{ inputs.source_registry == 'aws' }}
+
+    - name: Azure login for source
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.source_azure_client_id }}
+        tenant-id: ${{ inputs.source_azure_tenant_id }}
+        subscription-id: ${{ inputs.source_azure_subscription_id }}
+      if: ${{ inputs.source_registry == 'azure' }}
+    - name: Pull image from Azure Container Registry source
+      shell: bash
+      env:
+        REGISTRY_NAME: ${{ inputs.source_azure_registry_name }}
+        CONTAINER_IMAGE: ${{ inputs.container_image }}
+      run: |
+        set -euo pipefail
+        # The login server is read rather than assumed to be <name>.azurecr.io, which holds
+        # only in the public cloud (Azure China, for example, uses azurecr.cn).
+        LOGIN_SERVER=$(az acr show --name "${REGISTRY_NAME}" --query loginServer --output tsv)
+        az acr login --name "${REGISTRY_NAME}"
+        SOURCE_IMAGE="${LOGIN_SERVER}/${CONTAINER_IMAGE}"
+        docker pull "${SOURCE_IMAGE}"
+        echo "SOURCE_IMAGE=${SOURCE_IMAGE}" >> "${GITHUB_ENV}"
+      if: ${{ inputs.source_registry == 'azure' }}
+
     - uses: google-github-actions/auth@v2
       with:
         workload_identity_provider: ${{ inputs.target_workload_identity_provider }}
@@ -98,12 +220,18 @@ runs:
       if: ${{ inputs.target_registry == 'gcp' }}
     - name: Push image to GCP target
       shell: bash
+      env:
+        REGION: ${{ inputs.target_region }}
+        PROJECT_ID: ${{ inputs.target_gcp_project_id }}
+        CONTAINER_IMAGE: ${{ inputs.container_image }}
       run: |
-        gcloud auth configure-docker --quiet ${{ inputs.target_region }}-docker.pkg.dev
-        docker tag ${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }} \
-                   ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
-        docker push ${{ inputs.target_region }}-docker.pkg.dev/${{ inputs.target_gcp_project_id }}/${{ inputs.container_image }}
-      if: ${{ inputs.target_registry == 'gcp' && inputs.source_registry == 'gcp' }}
+        set -euo pipefail
+        gcloud auth configure-docker --quiet "${REGION}-docker.pkg.dev"
+        TARGET_IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${CONTAINER_IMAGE}"
+        docker tag "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
+        docker push "${TARGET_IMAGE}"
+      if: ${{ inputs.target_registry == 'gcp' }}
+
     - name: Configure AWS credentials for target
       uses: aws-actions/configure-aws-credentials@v6
       with:
@@ -112,33 +240,43 @@ runs:
       if: ${{ inputs.target_registry == 'aws' }}
     - name: Push image to AWS ECR target
       shell: bash
+      env:
+        REGION: ${{ inputs.target_region }}
+        ROLE_ARN: ${{ inputs.target_aws_role_arn }}
+        CONTAINER_IMAGE: ${{ inputs.container_image }}
       run: |
-        # Extract and validate target account ID from role ARN
-        TARGET_AWS_ACCOUNT_ID=$(echo "${{ inputs.target_aws_role_arn }}" | cut -d':' -f5)
-        if [[ -z "${TARGET_AWS_ACCOUNT_ID}" ]]; then
-          echo "Error: Failed to extract AWS account ID from target_aws_role_arn ('${{ inputs.target_aws_role_arn }}')." >&2
+        set -euo pipefail
+        ACCOUNT_ID=$(echo "${ROLE_ARN}" | cut -d':' -f5)
+        if [[ -z "${ACCOUNT_ID}" ]]; then
+          echo "Error: Failed to extract AWS account ID from target_aws_role_arn ('${ROLE_ARN}')." >&2
           echo "Please ensure it is a valid IAM role ARN, e.g., arn:aws:iam::<account-id>:role/<role-name>." >&2
           exit 1
         fi
-
-        # Login to ECR
-        aws ecr get-login-password --region ${{ inputs.target_region }} | \
-          docker login --username AWS --password-stdin "${TARGET_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.target_region }}.amazonaws.com"
-
-        # Ensure repository exists
-        REPO_NAME="${{ inputs.container_image }}"
-        REPO_NAME="${REPO_NAME%%:*}"
-
-        # Determine source image based on source registry
-        if [[ "${{ inputs.source_registry }}" == "gcp" ]]; then
-          SOURCE_IMAGE="${{ inputs.source_region }}-docker.pkg.dev/${{ inputs.source_gcp_project_id }}/${{ inputs.container_image }}"
-        elif [[ "${{ inputs.source_registry }}" == "aws" ]]; then
-          SOURCE_AWS_ACCOUNT_ID=$(echo "${{ inputs.source_aws_role_arn }}" | cut -d':' -f5)
-          SOURCE_IMAGE="${SOURCE_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.source_region }}.amazonaws.com/${{ inputs.container_image }}"
-        fi
-
-        # Tag and push
-        TARGET_IMAGE="${TARGET_AWS_ACCOUNT_ID}.dkr.ecr.${{ inputs.target_region }}.amazonaws.com/${{ inputs.container_image }}"
+        REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
+        aws ecr get-login-password --region "${REGION}" | \
+          docker login --username AWS --password-stdin "${REGISTRY}"
+        TARGET_IMAGE="${REGISTRY}/${CONTAINER_IMAGE}"
         docker tag "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
         docker push "${TARGET_IMAGE}"
       if: ${{ inputs.target_registry == 'aws' }}
+
+    - name: Azure login for target
+      uses: azure/login@v2
+      with:
+        client-id: ${{ inputs.target_azure_client_id }}
+        tenant-id: ${{ inputs.target_azure_tenant_id }}
+        subscription-id: ${{ inputs.target_azure_subscription_id }}
+      if: ${{ inputs.target_registry == 'azure' }}
+    - name: Push image to Azure Container Registry target
+      shell: bash
+      env:
+        REGISTRY_NAME: ${{ inputs.target_azure_registry_name }}
+        CONTAINER_IMAGE: ${{ inputs.container_image }}
+      run: |
+        set -euo pipefail
+        LOGIN_SERVER=$(az acr show --name "${REGISTRY_NAME}" --query loginServer --output tsv)
+        az acr login --name "${REGISTRY_NAME}"
+        TARGET_IMAGE="${LOGIN_SERVER}/${CONTAINER_IMAGE}"
+        docker tag "${SOURCE_IMAGE}" "${TARGET_IMAGE}"
+        docker push "${TARGET_IMAGE}"
+      if: ${{ inputs.target_registry == 'azure' }}
